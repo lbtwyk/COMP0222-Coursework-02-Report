@@ -35,6 +35,7 @@ London, United Kingdom}
 
 \begin{document}
 \maketitle
+\raggedbottom
 
 % ===================== Abstract =====================
 \begin{abstract}
@@ -282,27 +283,205 @@ The submitted video includes the raw indoor and outdoor streams, screen captures
 \section{LiDAR SLAM with Our Own Sequences}
 \label{sec:q3_lidar_slam}
 
-% TODO: Insert Question 3 content here.
-% Suggested structure:
-% \subsection{Data Collection}
-% \subsection{Laser Odometry and Mapping}
-% \subsection{Maximum Range}
-% \subsection{Angular Resolution}
-% \subsection{Voxel Grid Downsampling}
-% \subsection{Scan Rate}
-% \subsection{Loop Closure Detection}
-% \subsection{Factor Graph Optimisation}
-% \subsection{Video Evidence and Discussion}
+\subsection{Data Collection}
 
-This section is reserved for Question 3. It should describe the three LiDAR sequences, point cloud maps, occupancy grid maps, robot trajectories, parameter analysis, loop closure detection, factor graph optimisation, and before/after loop closure comparison.
+We used three RP-Lidar A2M12 recordings for the LiDAR part: \texttt{indoor\_large\_03}, \texttt{indoor\_small\_01}, and \texttt{outdoor\_02}. The large indoor scene is the same classroom area used for the camera sequence. The small indoor scene is a small meeting room. The outdoor scene is the same general outdoor place as the camera sequence, but the LiDAR route is different. In each run, the LiDAR was carried roughly level, starting from a marked point. The route was walked twice and then returned to the start. The marked loop points were kept for checking the result, not for helping the odometry.
+
+Table~\ref{tab:q3_data_collection} summarises the data. The large classroom gives strong wall and furniture returns. The small room is shorter, but because the path is compact, small errors are easier to see in the final map. The outdoor route is much longer and more open, so it is the hardest case for scan matching.
+
+\begin{table}[!t]
+\caption{LiDAR sequences used for Question 3. Each sequence has two manually marked loop completions.}
+\centering
+\footnotesize
+\begin{tabular}{lcrrr}
+\toprule
+Sequence & Env. & Scans & Time (s) & Rate (Hz) \\
+\midrule
+\texttt{indoor\_large\_03} & Indoor & 1234 & 96.90 & 12.73 \\
+\texttt{indoor\_small\_01} & Indoor & 659 & 60.64 & 10.87 \\
+\texttt{outdoor\_02} & Outdoor & 4796 & 407.18 & 11.78 \\
+\bottomrule
+\end{tabular}
+\label{tab:q3_data_collection}
+\end{table}
+
+\subsection{Laser Odometry and Mapping}
+
+For the baseline maps, each scan was matched against the growing map to estimate the LiDAR motion. The aligned scans were then combined into point-cloud and occupancy-grid maps. The baseline setting used a 6 m maximum range, all beams, a 0.05 m voxel grid, and every scan.
+
+Figs.~\ref{fig:q3_baseline_large}--\ref{fig:q3_baseline_outdoor} show the baseline maps and trajectories. The large-classroom map is the most stable: the two loops follow a similar shape and the final drift is 0.886 m. The small-room map is compact, but the second loop is less well aligned with the first, giving 3.586 m drift. The outdoor route is much longer, and the trajectory is visibly stretched, with 7.000 m final drift. This shows why the outdoor run is the hardest case for odometry alone.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\columnwidth]{images/Q3/baseline_indoor_large.png}
+\caption{Baseline large-classroom map. The two loops close fairly well and the main walls stay mostly aligned.}
+\label{fig:q3_baseline_large}
+\end{figure}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\columnwidth]{images/Q3/baseline_indoor_small.png}
+\caption{Baseline small-room map. The compact route makes the second-loop drift easier to see.}
+\label{fig:q3_baseline_small}
+\end{figure}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\columnwidth]{images/Q3/baseline_outdoor.png}
+\caption{Baseline outdoor map. The longer, more open route gives the largest drift.}
+\label{fig:q3_baseline_outdoor}
+\end{figure}
+
+\subsection{Parameter Analysis}
+
+The coursework asks us to test four parameters: maximum range, angular resolution, voxel grid size, and scan rate. Table~\ref{tab:q3_parameter_summary} lists the final drift for the main settings. The main result is that there is no single best setting for every place. The useful amount of scan detail changes with the size and structure of the environment.
+
+\begin{table}[!htbp]
+\caption{Parameter-study final drift results in metres.}
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{llccc}
+\toprule
+Study & Setting & Large & Small & Outdoor \\
+\midrule
+Range & 6 m & 0.886 & 3.586 & 7.000 \\
+Range & 12 m & 0.494 & 2.301 & 18.183 \\
+Beams & Full & 0.886 & 3.586 & 7.000 \\
+Beams & 1/2 & 0.451 & 4.782 & 9.203 \\
+Beams & 1/3 & 0.852 & 2.258 & 7.875 \\
+Voxel & 0.05 m & 0.886 & 3.586 & 7.000 \\
+Voxel & 0.10 m & 0.886 & 3.674 & 2251.157 \\
+Scans & All & 0.886 & 3.586 & 7.000 \\
+Scans & 1/2 & 0.915 & 0.608 & 2.820 \\
+Scans & 1/3 & 0.687 & 1.978 & 3.708 \\
+\bottomrule
+\end{tabular}
+\label{tab:q3_parameter_summary}
+\end{table}
+
+Maximum range behaves differently indoors and outdoors. In Fig.~\ref{fig:q3_param_range}, increasing the range from 6 m to 12 m improves both indoor sequences because the scan contains more walls and room boundaries. Outdoors, the same change makes the result worse, increasing drift from 7.000 m to 18.183 m, because distant returns are less reliable for matching.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\columnwidth]{images/Q3/param_max_range.png}
+\caption{Maximum-range experiment. The 12 m range helps indoors but hurts outdoors because distant returns are less reliable.}
+\label{fig:q3_param_range}
+\end{figure}
+
+Angular downsampling also depends on the scene. Fig.~\ref{fig:q3_param_angular} shows that using every 2nd beam gives the lowest drift in the large classroom, while every 3rd beam works best in the small room. Outdoors, the full scan is still best because the route already has less nearby structure, so removing beams loses useful information.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\columnwidth]{images/Q3/param_angular_resolution.png}
+\caption{Angular-resolution experiment. Beam downsampling can help indoors, but the outdoor route needs the full scan.}
+\label{fig:q3_param_angular}
+\end{figure}
+
+The voxel-grid test gives the clearest failure case. A 0.05 m voxel size works on all three sequences, but a 0.10 m grid removes too much detail outdoors. In Fig.~\ref{fig:q3_param_voxel}, the trajectory becomes a long artificial line and the map no longer matches the real route. Because of this, the final runs use the 0.05 m setting.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\columnwidth]{images/Q3/param_voxel_outdoor.png}
+\caption{Outdoor voxel-grid result. The 0.05 m grid keeps enough detail, while the 0.10 m grid is too coarse and fails badly.}
+\label{fig:q3_param_voxel}
+\end{figure}
+
+Reducing the scan rate did not simply make the result worse. Fig.~\ref{fig:q3_param_scan_rate} shows that using every 2nd scan improves the small-room and outdoor drift, while every 3rd scan is best for the large classroom. For these recordings, skipping some scans may reduce small local matching errors. This should not be treated as a general rule, since the best scan rate also depends on walking speed and scene layout.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\columnwidth]{images/Q3/param_scan_rate.png}
+\caption{Scan-rate experiment. Skipping scans helps some recordings here, but the best choice depends on the environment.}
+\label{fig:q3_param_scan_rate}
+\end{figure}
+
+\subsection{Loop Closure Detection}
+
+Loop closure looks for places that the LiDAR has visited before. The detector first removes candidates that are too close in time or distance. It then checks scan similarity, tests whether the scans align well, and removes duplicate matches. The final set keeps both local revisits along the path and anchor loops that connect the second pass back to the start area.
+
+Figs.~\ref{fig:q3_loop_large}--\ref{fig:q3_loop_outdoor} show the accepted loop closures. The large classroom has 7 accepted loops and detects both manual loop markers. The small room has 4 accepted loops and detects one of the two markers. The outdoor route has 12 accepted loops, so the detector does find repeated places, but neither manual marker is matched directly. This makes the outdoor marker comparison weaker, even though useful loop closures are still found.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\columnwidth]{images/Q3/loop_indoor_large.png}
+\caption{Loop closures in the large indoor sequence. Both manual loop markers are found.}
+\label{fig:q3_loop_large}
+\end{figure}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\columnwidth]{images/Q3/loop_indoor_small.png}
+\caption{Loop closures in the small indoor sequence. One of the two manual loop markers is found.}
+\label{fig:q3_loop_small}
+\end{figure}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\columnwidth]{images/Q3/loop_outdoor.png}
+\caption{Loop closures in the outdoor sequence. Revisited places are found, but neither manual marker is directly matched.}
+\label{fig:q3_loop_outdoor}
+\end{figure}
+
+\FloatBarrier
+
+\subsection{Factor Graph Optimisation}
+
+The final stage uses a pose graph to correct the trajectory. Consecutive poses are linked by odometry, and accepted revisits are linked by loop-closure edges. We tested several loop-edge choices and selected the ones that closed the route well without bending the map too much. Table~\ref{tab:q3_loop_optimization} summarises the final results.
+
+\begin{table}[!htbp]
+\caption{Loop-closure and optimisation summary. Closure error is the distance between the start and final pose.}
+\centering
+\scriptsize
+\setlength{\tabcolsep}{2pt}
+\begin{tabular}{lcccc}
+\toprule
+Sequence & Loops & Hits & Edges & Error (m) \\
+\midrule
+Large indoor & 7 & 2/2 & 1 & 2.443$\rightarrow$0.898 \\
+Small indoor & 4 & 1/2 & 1 & 2.395$\rightarrow$0.546 \\
+Outdoor & 12 & 0/2 & 2 & 2.820$\rightarrow$0.817 \\
+\bottomrule
+\end{tabular}
+\label{tab:q3_loop_optimization}
+\end{table}
+
+Figs.~\ref{fig:q3_optim_large} and \ref{fig:q3_optim_small} show the two indoor optimisation results. In both cases, one strong anchor loop is enough to bring the final pose close to the start. The large-classroom error is reduced from 2.443 m to 0.898 m, and the small-room error is reduced from 2.395 m to 0.546 m.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\columnwidth]{images/Q3/optim_indoor_large.png}
+\caption{Large indoor area before and after optimisation. The final pose moves much closer to the start.}
+\label{fig:q3_optim_large}
+\end{figure}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\columnwidth]{images/Q3/optim_indoor_small.png}
+\caption{Small indoor room before and after optimisation. The compact route closes much better after correction.}
+\label{fig:q3_optim_small}
+\end{figure}
+
+For the outdoor route, one anchor loop alone also reduced the final error, but it bent the trajectory too much. The final result therefore uses one anchor loop and one supporting loop. Fig.~\ref{fig:q3_optim_outdoor} shows that the corrected trajectory returns much closer to the start, reducing the error from 2.820 m to 0.817 m. The outdoor map still has some duplicated and smeared structure, but it is clearly more consistent than the odometry-only map.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\columnwidth]{images/Q3/optim_outdoor.png}
+\caption{Outdoor route before and after optimisation. Two loop edges close the route while keeping the long trajectory smoother.}
+\label{fig:q3_optim_outdoor}
+\end{figure}
+
+\subsection{Video Evidence and Discussion}
+
+The submitted video shows the best LiDAR mapping run for each sequence. It includes the live map and the estimated path, so the second-loop consistency can be checked visually. The videos support the same conclusion as the numbers: laser odometry can build useful maps, but loop closure is needed to make the final loop consistent.
+
+\FloatBarrier
 
 % ============================================================
 \section{Conclusion}
 \label{sec:conclusion}
 
-% TODO: Add final group-level conclusion after Q1 and Q3 are inserted.
-
-This report presents the group coursework results for visual and LiDAR SLAM. The final conclusion should summarise the main findings from the public visual SLAM experiments, the self-collected visual SLAM comparison, and the LiDAR SLAM mapping and optimisation experiments.
+This report presents the group coursework results for visual and LiDAR SLAM. For the self-collected visual sequences, the outdoor route agreed better between COLMAP and ORB-SLAM2 because it had sharper images and clearer visual structure. The indoor route was harder because of low texture and repeated planar regions. For LiDAR SLAM, the parameter studies showed that good settings depend on the environment: longer range helped indoors but hurt outdoors, fine voxel filtering was important, and reduced scan rate helped some recordings but was not a general rule. Loop closure and optimisation reduced final drift in all three LiDAR sequences, from 2.443 m to 0.898 m in the large indoor area, from 2.395 m to 0.546 m in the small indoor room, and from 2.820 m to 0.817 m outdoors.
 
 % ============================================================
 % Optional bibliography placeholder. Add references if required.
